@@ -22,7 +22,9 @@ const api = {
   syncStartAutoAuth: (creds) => ipcRenderer.invoke('sync-start-auto-auth', creds),
   syncExchangeCode: (code) => ipcRenderer.invoke('sync-exchange-code', code),
   syncGetConfig: () => ipcRenderer.invoke('sync-get-config'),
-  syncStart: () => ipcRenderer.invoke('sync-start')
+  syncStart: () => ipcRenderer.invoke('sync-start'),
+  importNote: () => ipcRenderer.invoke('import-note'),
+  showConfirmDialog: (options) => ipcRenderer.invoke('show-confirm-dialog', options)
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

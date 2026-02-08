@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join, relative } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -28,7 +28,7 @@ async function getNotes(dir) {
           type: 'directory',
           children: await getNotes(fullPath)
         }
-      } else if (entry.isFile() && entry.name.endsWith('.md')) {
+      } else if (entry.isFile() && /\.(md|txt|json|htm|html|rtf)$/i.test(entry.name)) {
         // Read frontmatter for caching/preview if needed,
         // but for now let's just return file info to keep it fast
         // or we can read it. Let's read it to provide titles/tags in the list.
@@ -51,7 +51,7 @@ async function getNotes(dir) {
           }
 
           return {
-            title: parsed.data.title || entry.name.replace('.md', ''),
+            title: parsed.data.title || entry.name.replace(/\.(md|txt|json|htm|html|rtf)$/i, ''),
             path: relPath,
             type: 'file',
             links,
@@ -234,6 +234,50 @@ app.whenReady().then(() => {
     const newPath = join(notesDir, newRelPath)
     await fs.rename(oldPath, newPath)
     return true
+  })
+
+  ipcMain.handle('show-confirm-dialog', async (event, options) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const result = await dialog.showMessageBox(win, options)
+    return result.response
+  })
+
+  ipcMain.handle('import-note', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [
+        { name: 'Supported Files', extensions: ['md', 'txt', 'json', 'htm', 'html', 'rtf'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    })
+
+    if (canceled || filePaths.length === 0) {
+      return null
+    }
+
+    const sourcePath = filePaths[0]
+    const content = await fs.readFile(sourcePath, 'utf-8')
+    const filename = sourcePath.split('/').pop() || 'imported.txt'
+    const ext = filename.split('.').pop()
+
+    const importsDir = join(notesDir, 'imports')
+    if (!fsSync.existsSync(importsDir)) {
+      await fs.mkdir(importsDir, { recursive: true })
+    }
+
+    // Ensure unique filename in imports folder
+    let targetFilename = filename
+    let counter = 1
+    while (fsSync.existsSync(join(importsDir, targetFilename))) {
+      const name = filename.replace(`.${ext}`, '')
+      targetFilename = `${name} (${counter}).${ext}`
+      counter++
+    }
+
+    const targetPath = join(importsDir, targetFilename)
+    await fs.writeFile(targetPath, content, 'utf-8')
+
+    return `imports/${targetFilename}`
   })
 
   // Sync Handlers

@@ -1,16 +1,23 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import Sidebar from './components/Sidebar'
 import Editor from './components/Editor'
 import GraphView from './components/GraphView'
 import HelpModal from './components/HelpModal'
 import SyncModal from './components/SyncModal'
 import Settings from './components/Settings'
-import { Network, Edit3, Sun, Moon, HelpCircle, UploadCloud, Settings as SettingsIcon } from 'lucide-react'
+import TabBar from './components/TabBar'
+import { Network, Edit3, Sun, Moon, HelpCircle, UploadCloud, Download } from 'lucide-react'
 
 function App() {
   const [notes, setNotes] = useState([])
-  const [activeNote, setActiveNote] = useState(null)
   const [view, setView] = useState('editor') // 'editor' | 'graph'
+
+  // Tab State
+  const [openTabs, setOpenTabs] = useState([])
+  const [activeTabPath, setActiveTabPath] = useState(null)
+
+  // Unsaved Edits State: { [path]: { content, metadata, tagsString, isDirty } }
+  const [unsavedEdits, setUnsavedEdits] = useState({})
 
   const [filterTags, setFilterTags] = useState([])
   const [isHelpOpen, setIsHelpOpen] = useState(false)
@@ -21,6 +28,17 @@ function App() {
     }
     return 'light'
   })
+
+  // Derived state for active note
+  const activeNote = activeTabPath
+    ? notes.find((n) => n.path === activeTabPath) ||
+    findNoteByTitle(notes, openTabs.find((t) => t.path === activeTabPath)?.title) ||
+    // Fallback: create skeleton if not loaded yet
+    (() => {
+      const tab = openTabs.find((t) => t.path === activeTabPath)
+      return tab ? { path: tab.path, title: tab.title, content: '', type: 'file' } : null
+    })()
+    : null
 
   useEffect(() => {
     console.log('Theme changed to:', theme)
@@ -56,7 +74,7 @@ function App() {
   }, [])
 
   // Recursive helper to find note by title
-  const findNoteByTitle = (nodes, title) => {
+  function findNoteByTitle(nodes, title) {
     for (const node of nodes) {
       if (node.type === 'file' && node.title === title) {
         return node
@@ -67,6 +85,106 @@ function App() {
       }
     }
     return null
+  }
+
+  // -- Tab Management --
+
+  const handleOpenNote = (note) => {
+    if (!note) return
+
+    // Check if already open
+    const isOpen = openTabs.some((tab) => tab.path === note.path)
+    if (!isOpen) {
+      setOpenTabs((prev) => [...prev, { path: note.path, title: note.title }])
+    }
+    setActiveTabPath(note.path)
+    setView('editor')
+  }
+
+  const handleCloseTab = async (path, force = false) => {
+    // Check for unsaved edits
+    if (!force && unsavedEdits[path]) {
+      const { response } = await window.api.showConfirmDialog({
+        type: 'question',
+        buttons: ['Save', 'Discard', 'Cancel'],
+        defaultId: 0,
+        cancelId: 2,
+        title: 'Unsaved Changes',
+        message: 'Do you want to save the changes you made?',
+        detail: `Your changes to ${path} will be lost if you don't save them.`
+      })
+
+      if (response === 2) {
+        // Cancel - do nothing
+        return
+      }
+
+      if (response === 0) {
+        // Save
+        const data = unsavedEdits[path]
+        await handleSaveNote(path, data.content, data.metadata)
+      }
+
+      // If response === 1 (Discard), we just fall through to close logic below
+    }
+
+    setOpenTabs((prev) => {
+      const newTabs = prev.filter((t) => t.path !== path)
+      if (activeTabPath === path) {
+        // If closing active tab, switch to the last one or null
+        const closedIndex = prev.findIndex((t) => t.path === path)
+        let nextActive = null
+        if (newTabs.length > 0) {
+          // Try to go to near neighbor
+          const nextIndex = Math.min(closedIndex, newTabs.length - 1)
+          nextActive = newTabs[nextIndex].path
+        }
+        setActiveTabPath(nextActive)
+      }
+      return newTabs
+    })
+
+    // Clean up unsaved edits for the closed tab
+    setUnsavedEdits((prev) => {
+      const newEdits = { ...prev }
+      delete newEdits[path]
+      return newEdits
+    })
+  }
+
+  const handleDiscardChanges = (path) => {
+    // Ideally this just wraps handleCloseTab but forces bypassing the check?
+    // Actually handleCloseTab checks if unsavedEdits exists.
+    // So if we remove it first, then close...
+
+    setUnsavedEdits((prev) => {
+      const newEdits = { ...prev }
+      delete newEdits[path]
+      return newEdits
+    })
+
+    // We need to wait for state update? Or just call close?
+    // State updates are async. Maybe we can pass a flag to handleCloseTab?
+    // Or just implement the close logic here directly to be safe?
+    // Or better: update handleCloseTab to accept a force flag?
+
+    // Let's just implement a direct close for simplicity and reliability here
+    // But since handleCloseTab manages active tab switching logic, better to reuse.
+
+    // Trick: If we know for sure we want to discard, we can just delete from state 
+    // AND then call close. But race condition might occur if handleCloseTab reads old state.
+    // Actually, state updates are batched. 
+    // Let's modify handleCloseTab to accept an optional 'force' param?
+    // Or just call window.api.readNote to "revert" if we weren't closing?
+    // The user said "exit without saving". So close tab.
+
+    // Let's do this:
+    // 1. Clear unsaved edits (so handleCloseTab won't prompt)
+    // 2. Call handleCloseTab
+
+    // To avoid race condition, let's just use strict logic in handleCloseTab
+    // or pass a second arg to it? `handleCloseTab(path, force = false)`
+    handleCloseTab(path, true)
   }
 
   const handleCreateNote = async () => {
@@ -85,7 +203,20 @@ function App() {
 
     const name = `Untitled-${Date.now()}.md`
     // Use the unique title we found
-    await window.api.createNote(name, `# ${titleToUse}`, { title: titleToUse })
+    try {
+      await window.api.createNote(name, `# ${titleToUse}`, { title: titleToUse })
+      // Auto-open immediately
+      handleOpenNote({ path: name, title: titleToUse, type: 'file' })
+    } catch (e) {
+      console.error('Failed to create note', e)
+    }
+  }
+
+  const handleNoteChange = (path, data) => {
+    setUnsavedEdits((prev) => ({
+      ...prev,
+      [path]: data
+    }))
   }
 
   const handleSaveNote = async (path, content, metadata) => {
@@ -110,8 +241,15 @@ function App() {
           try {
             await window.api.renameNote(path, newPath)
             targetPath = newPath
-            if (activeNote && activeNote.path === path) {
-              setActiveNote({ ...activeNote, path: newPath, title: metadata.title })
+
+            // Update tabs
+            setOpenTabs((prev) =>
+              prev.map((t) =>
+                t.path === path ? { ...t, path: newPath, title: metadata.title } : t
+              )
+            )
+            if (activeTabPath === path) {
+              setActiveTabPath(newPath)
             }
           } catch (e) {
             console.error('Rename failed', e)
@@ -120,17 +258,27 @@ function App() {
       }
     }
     await window.api.writeNote(targetPath, content, metadata)
+
+    // Clear unsaved edits after successful save
+    setUnsavedEdits((prev) => {
+      const newEdits = { ...prev }
+      delete newEdits[path] // Delete old path key
+      if (targetPath !== path) {
+        delete newEdits[targetPath] // Just in case
+      }
+      return newEdits
+    })
   }
 
   const handleDeleteNote = async (path) => {
     if (window.confirm('Are you sure you want to delete this note?')) {
       try {
         await window.api.deleteNote(path)
-        if (activeNote && activeNote.path === path) {
-          setActiveNote(null)
-          setView('editor') // Reset to editor view blank state
+        // Close tab if open
+        const isOpen = openTabs.some((t) => t.path === path)
+        if (isOpen) {
+          handleCloseTab(path)
         }
-        // Notes list auto-updates via fs watcher
       } catch (e) {
         console.error('Failed to delete note', e)
         const msg = e.message.includes('not empty')
@@ -161,8 +309,19 @@ function App() {
     if (srcPath === destPath) return
     try {
       await window.api.renameNote(srcPath, destPath)
-      if (activeNote && activeNote.path === srcPath) {
-        setActiveNote({ ...activeNote, path: destPath })
+      // Update tabs if moved note was open
+      setOpenTabs((prev) => {
+        return prev.map((t) => {
+          if (t.path === srcPath) {
+            // We need the new title? Or just path.
+            // Re-deriving title might happen on next loadNotes.
+            return { ...t, path: destPath }
+          }
+          return t
+        })
+      })
+      if (activeTabPath === srcPath) {
+        setActiveTabPath(destPath)
       }
     } catch (e) {
       console.error('Failed to move note', e)
@@ -172,8 +331,41 @@ function App() {
   const handleRenameItem = async (oldPath, newName) => {
     try {
       await window.api.renameNote(oldPath, newName)
+      // Tabs update is tricky without knowing the full new path immediately,
+      // but onNoteUpdate will reload notes.
+      // However, we should probably update state if we can to avoid glitches.
+      // For now, rely on sync or handleSaveNote if it's the active note being renamed via Editor.
     } catch (e) {
       console.error('Rename failed', e)
+    }
+  }
+
+  const handleImportNote = async () => {
+    try {
+      const importedPath = await window.api.importNote()
+      if (importedPath) {
+        await loadNotes()
+        // Optionally find the new note and open it
+        // We know the path is imports/filename.md usually, but let's find the exact node
+        const note =
+          notes.find((n) => n.path === importedPath) ||
+          findNoteByTitle(notes, importedPath.split('/').pop().replace('.md', ''))
+
+        if (note) {
+          handleOpenNote(note)
+        } else {
+          // Fallback: try to wait or manually construct object to open tab
+          setOpenTabs((prev) => [
+            ...prev,
+            { path: importedPath, title: importedPath.split('/').pop() }
+          ])
+          setActiveTabPath(importedPath)
+          setView('editor')
+        }
+      }
+    } catch (e) {
+      console.error('Failed to import note', e)
+      alert('Failed to import note: ' + e.message)
     }
   }
 
@@ -181,20 +373,16 @@ function App() {
     const target = findNoteByTitle(notes, targetTitle)
 
     if (target) {
-      setActiveNote(target)
+      handleOpenNote(target)
     } else {
       if (confirm(`Note "${targetTitle}" not found. Create it?`)) {
         const name = targetTitle.trim() + '.md'
         await window.api.createNote(name, `# ${targetTitle}\n\n`, { title: targetTitle })
         await loadNotes()
-        // We need to wait for reload or optimistically find it?
-        // loadNotes is async, but state update might lag.
-        // Let's rely on onNoteUpdate or just wait a bit.
-        // For now, let user find it newly created.
-        // Or try to set it active after a delay?
+        // Try to open it after a delay
         setTimeout(() => {
-          // This is hacky, but simpler for now.
-          // Ideally we get the new note object back from createNote but our API returns boolean/void.
+          // We can trigger a reload and then try to find it?
+          // Or just let user open it.
         }, 500)
       }
     }
@@ -205,11 +393,8 @@ function App() {
       <Sidebar
         theme={theme}
         notes={notes}
-        activeNote={activeNote?.path}
-        onSelect={(node) => {
-          setActiveNote(node)
-          setView('editor')
-        }}
+        activeNote={activeTabPath}
+        onSelect={handleOpenNote}
         onCreateNote={handleCreateNote}
         onCreateFolder={handleCreateFolder}
         onMoveNote={handleMoveNote}
@@ -220,12 +405,22 @@ function App() {
       />
 
       <div
-        className={`flex-1 flex flex-col h-full ${theme === 'dark' ? 'bg-slate-900' : 'bg-slate-50'}`}
+        className={`flex-1 flex flex-col h-full min-w-0 ${theme === 'dark' ? 'bg-slate-900' : 'bg-slate-50'}`}
       >
         <div
           className={`h-12 border-b flex justify-end items-center px-4 gap-2 shrink-0 ${theme === 'dark' ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-white'
             }`}
         >
+          <button
+            onClick={handleImportNote}
+            className={`p-1.5 rounded bg-transparent transition-colors mr-2 ${theme === 'dark'
+              ? 'text-slate-400 hover:bg-slate-700'
+              : 'text-slate-500 hover:bg-slate-100'
+              }`}
+            title="Import Note"
+          >
+            <Download size={18} />
+          </button>
           <button
             onClick={() => setIsSyncModalOpen(true)}
             className={`p-1.5 rounded bg-transparent transition-colors mr-2 ${theme === 'dark'
@@ -286,13 +481,26 @@ function App() {
           </button>
         </div>
 
+        {view === 'editor' && (
+          <TabBar
+            tabs={openTabs}
+            activeTabPath={activeTabPath}
+            onTabClick={(path) => setActiveTabPath(path)}
+            onTabClose={handleCloseTab}
+            theme={theme}
+          />
+        )}
+
         <div className="flex-1 overflow-hidden relative">
           {view === 'editor' ? (
             <Editor
               theme={theme}
               activeNote={activeNote}
               onSave={handleSaveNote}
+              onDiscard={handleDiscardChanges}
               onLinkClick={handleLinkClick}
+              draftState={activeTabPath ? unsavedEdits[activeTabPath] : null}
+              onNoteChange={handleNoteChange}
             />
           ) : (
             <GraphView
@@ -300,9 +508,7 @@ function App() {
               notes={notes}
               onSelectNode={(node) => {
                 if (node && node.path) {
-                  // Select file
-                  setActiveNote(node)
-                  setView('editor')
+                  handleOpenNote(node)
                 }
               }}
               onSelectTag={(tag) => {
@@ -313,9 +519,7 @@ function App() {
             />
           )}
 
-          {view === 'settings' && (
-            <Settings theme={theme} onClose={() => setView('editor')} />
-          )}
+          {view === 'settings' && <Settings theme={theme} onClose={() => setView('editor')} />}
         </div>
       </div>
       <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} theme={theme} />

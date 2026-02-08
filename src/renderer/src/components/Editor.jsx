@@ -1,7 +1,14 @@
-import React, { useEffect, useState, useCallback } from 'react'
-import { Save } from 'lucide-react'
+import { useEffect, useState, useCallback } from 'react'
+import { Save, XCircle } from 'lucide-react'
+import Mermaid from './Mermaid'
+import MathBlock from './blocks/MathBlock'
+import CodeBlock from './blocks/CodeBlock'
+import Admonition from './blocks/Admonition'
+import VideoEmbed from './blocks/VideoEmbed'
+import CSVTable from './blocks/CSVTable'
+import KanbanBoard from './blocks/KanbanBoard'
 
-export default function Editor({ activeNote, onSave, onLinkClick, theme }) {
+export default function Editor({ activeNote, onSave, onDiscard, onLinkClick, theme, draftState, onNoteChange }) {
   const [content, setContent] = useState('')
   const [metadata, setMetadata] = useState({})
   const [tagsString, setTagsString] = useState('')
@@ -14,6 +21,14 @@ export default function Editor({ activeNote, onSave, onLinkClick, theme }) {
       setContent('')
       setMetadata({})
       setTagsString('')
+      return
+    }
+
+    if (draftState) {
+      setContent(draftState.content)
+      setMetadata(draftState.metadata)
+      setTagsString(draftState.tagsString)
+      setIsDirty(true)
       return
     }
 
@@ -34,7 +49,7 @@ export default function Editor({ activeNote, onSave, onLinkClick, theme }) {
         console.error(err)
         setLoading(false)
       })
-  }, [activeNote])
+  }, [activeNote]) // draftState is intentionally omitted to avoid resetting on every keystroke if it updates
 
   const handleSave = useCallback(() => {
     if (activeNote && isDirty) {
@@ -69,19 +84,36 @@ export default function Editor({ activeNote, onSave, onLinkClick, theme }) {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [handleSave])
 
+  const notifyChange = (newContent, newMetadata, newTagsString) => {
+    if (onNoteChange && activeNote) {
+      onNoteChange(activeNote.path, {
+        content: newContent,
+        metadata: newMetadata,
+        tagsString: newTagsString
+      })
+    }
+  }
+
   const handleContentChange = (e) => {
-    setContent(e.target.value)
+    const newContent = e.target.value
+    setContent(newContent)
     setIsDirty(true)
+    notifyChange(newContent, metadata, tagsString)
   }
 
   const handleTitleChange = (e) => {
-    setMetadata((prev) => ({ ...prev, title: e.target.value }))
+    const newTitle = e.target.value
+    const newMetadata = { ...metadata, title: newTitle }
+    setMetadata(newMetadata)
     setIsDirty(true)
+    notifyChange(content, newMetadata, tagsString)
   }
 
   const handleTagsChange = (e) => {
-    setTagsString(e.target.value)
+    const newTags = e.target.value
+    setTagsString(newTags)
     setIsDirty(true)
+    notifyChange(content, metadata, newTags)
   }
 
   // Simple Markdown + Wikilink Renderer
@@ -92,36 +124,110 @@ export default function Editor({ activeNote, onSave, onLinkClick, theme }) {
     const paragraphs = content.split(/\n\n+/)
 
     return paragraphs.map((block, idx) => {
-      // Regex for [[Link]]
-      const parts = block.split(/(\[\[.*?\]\])/g)
+      // Regex for custom blocks: ///type ... ///
+      // And standard code blocks: ```lang ... ```
+      const parts = block.split(/(\/\/\/[a-z]+[\s\S]*?\/\/\/|```[\s\S]*?```)/g)
 
-      const children = parts.map((part, i) => {
-        if (part.startsWith('[[') && part.endsWith(']]')) {
-          const raw = part.slice(2, -2) // remove [[ ]]
-          const [target, alias] = raw.split('|')
-          const display = alias || target
+      const blockContent = parts.map((chunk, cIdx) => {
+        if (chunk.startsWith('///') && chunk.endsWith('///')) {
+          const firstLineEnd = chunk.indexOf('\n')
+          const type = chunk.slice(3, firstLineEnd).trim().toLowerCase()
+          const content = chunk.slice(firstLineEnd + 1, -3).trim()
 
-          return (
-            <span
-              key={i}
-              onClick={() => onLinkClick && onLinkClick(target)}
-              className="text-blue-500 hover:text-blue-600 hover:underline cursor-pointer font-medium"
-              title={`Open ${target}`}
-            >
-              {display}
-            </span>
-          )
+          switch (type) {
+            case 'mermaid':
+              return <Mermaid key={`${idx}-${cIdx}`} chart={content} theme={theme} />
+            case 'math':
+              return <MathBlock key={`${idx}-${cIdx}`} content={content} />
+            case 'csv':
+              return <CSVTable key={`${idx}-${cIdx}`} data={content} />
+            case 'kanban':
+              return <KanbanBoard key={`${idx}-${cIdx}`} content={content} />
+            case 'video':
+              return <VideoEmbed key={`${idx}-${cIdx}`} url={content} />
+            case 'note':
+            case 'tip':
+            case 'warning':
+            case 'caution':
+              return (
+                <Admonition key={`${idx}-${cIdx}`} type={type} title={type.toUpperCase()}>
+                  {content}
+                </Admonition>
+              )
+            default:
+              return (
+                <pre
+                  key={`${idx}-${cIdx}`}
+                  className="bg-slate-100 dark:bg-slate-800 p-2 rounded text-red-500"
+                >
+                  Unknown block type: {type}
+                </pre>
+              )
+          }
         }
-        return part
+
+        if (chunk.startsWith('```') && chunk.endsWith('```')) {
+          const lines = chunk.split('\n')
+          const firstLine = lines[0].trim()
+          const lang = firstLine.replace(/^```/, '').trim().toLowerCase()
+          const code = lines.slice(1, -1).join('\n')
+
+          return <CodeBlock key={`${idx}-${cIdx}`} language={lang} code={code} theme={theme} />
+        }
+
+        // Regular text processing (WikiLinks and Web Links)
+        // Regex to split by WikiLinks [[...]] OR Web Links [text](url)
+        const linkParts = chunk.split(/(\[\[.*?\]\]|\[.*?\]\(.*?\))/g)
+        const children = linkParts.map((part, i) => {
+          // WikiLinks: [[Target|Alias]]
+          if (part.startsWith('[[') && part.endsWith(']]')) {
+            const raw = part.slice(2, -2) // remove [[ ]]
+            const [target, alias] = raw.split('|')
+            const display = alias || target
+
+            return (
+              <span
+                key={i}
+                onClick={() => onLinkClick && onLinkClick(target)}
+                className="text-blue-500 hover:text-blue-600 hover:underline cursor-pointer font-medium"
+                title={`Open ${target}`}
+              >
+                {display}
+              </span>
+            )
+          }
+
+          // Web Links: [Text](URL)
+          const webLinkMatch = part.match(/^\[(.*?)\]\((.*?)\)$/)
+          if (webLinkMatch) {
+            const [, text, url] = webLinkMatch
+            return (
+              <a
+                key={i}
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-500 hover:text-blue-600 hover:underline cursor-pointer font-medium flex items-center inline-flex gap-0.5"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {text}
+              </a>
+            )
+          }
+
+          return part
+        })
+
+        return <span key={`${idx}-${cIdx}`}>{children}</span>
       })
 
       return (
-        <p
+        <div
           key={idx}
           className={`mb-4 whitespace-pre-wrap ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}
         >
-          {children}
-        </p>
+          {blockContent}
+        </div>
       )
     })
   }
@@ -156,15 +262,14 @@ export default function Editor({ activeNote, onSave, onLinkClick, theme }) {
           <div className="flex items-center gap-2 shrink-0 ml-4">
             <button
               onClick={() => setIsPreview(!isPreview)}
-              className={`px-2 py-1.5 rounded text-xs font-medium transition-colors border ${
-                isPreview
-                  ? theme === 'dark'
-                    ? 'bg-slate-700 text-blue-300 border-blue-500/30'
-                    : 'bg-blue-50 text-blue-700 border-blue-200'
-                  : theme === 'dark'
-                    ? 'text-slate-400 border-slate-700 hover:bg-slate-800'
-                    : 'text-slate-500 border-slate-200 hover:bg-slate-50'
-              }`}
+              className={`px-2 py-1.5 rounded text-xs font-medium transition-colors border ${isPreview
+                ? theme === 'dark'
+                  ? 'bg-slate-700 text-blue-300 border-blue-500/30'
+                  : 'bg-blue-50 text-blue-700 border-blue-200'
+                : theme === 'dark'
+                  ? 'text-slate-400 border-slate-700 hover:bg-slate-800'
+                  : 'text-slate-500 border-slate-200 hover:bg-slate-50'
+                }`}
             >
               {isPreview ? 'Edit' : 'Preview'}
             </button>
@@ -176,6 +281,15 @@ export default function Editor({ activeNote, onSave, onLinkClick, theme }) {
             >
               <Save size={16} />
             </button>
+            {isDirty && (
+              <button
+                onClick={() => onDiscard && activeNote && onDiscard(activeNote.path)}
+                className={`p-1.5 rounded transition-colors ${theme === 'dark' ? 'text-red-400 hover:text-red-200 hover:bg-red-900/40' : 'text-red-500 hover:text-red-700 hover:bg-red-50'}`}
+                title="Discard Changes & Exit"
+              >
+                <XCircle size={16} />
+              </button>
+            )}
           </div>
         </div>
         <input

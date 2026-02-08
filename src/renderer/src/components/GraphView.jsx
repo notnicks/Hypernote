@@ -171,6 +171,7 @@ export default function GraphView({ notes, onSelectNode, onSelectTag, theme }) {
         nodeRelSize={6}
         linkDirectionalArrowLength={(link) => (link.type === 'wiki' ? 3.5 : 0)} // Arrows for wiki links only
         linkDirectionalArrowRelPos={1}
+        linkLineDash={(link) => (link.type === 'tag' ? [2, 2] : null)} // Dotted for tag links
         onNodeClick={(node) => {
           if (node.path) {
             onSelectNode(node)
@@ -183,9 +184,36 @@ export default function GraphView({ notes, onSelectNode, onSelectTag, theme }) {
         }}
       />
       <div
-        className={`absolute bottom-4 right-4 p-2 rounded text-xs backdrop-blur ${theme === 'dark' ? 'bg-slate-800/80 text-slate-400' : 'bg-white/80 text-slate-500'}`}
+        className={`absolute bottom-4 right-4 p-3 rounded-lg text-xs backdrop-blur border shadow-lg flex flex-col gap-2 ${theme === 'dark'
+          ? 'bg-slate-800/90 text-slate-300 border-slate-700'
+          : 'bg-white/90 text-slate-600 border-slate-200'
+          }`}
       >
-        Graph View (Tags)
+        <div className="font-bold mb-1 opacity-70">Legend</div>
+
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+          <span>Note (File)</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+          <span>Tag</span>
+        </div>
+
+        <div className="h-px bg-slate-500/20 my-1"></div>
+
+        <div className="flex items-center gap-2">
+          <div className={`w-4 h-0.5 ${theme === 'dark' ? 'bg-slate-600' : 'bg-slate-300'}`}></div>
+          <span>Wiki Link</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-4 h-0.5 border-b-2 border-emerald-400 border-dotted"></div>
+          <span>Tag Link</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-4 h-0.5 bg-orange-400"></div>
+          <span>Hierarchy</span>
+        </div>
       </div>
     </div>
   )
