@@ -12,6 +12,17 @@ asarUnpack:
   - resources/**
 win:
   executableName: hypernote
+  target:
+    - nsis
+    - appx
+appx:
+  publisher: "CN=YOUR-PUBLISHER-ID-HERE"
+  publisherDisplayName: "Your Name or Company"
+  identityName: "com.electron.hypernote"
+  applicationId: "Hypernote"
+  displayName: "Hypernote"
+  languages:
+    - en-US
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
@@ -29,9 +40,16 @@ dmg:
   artifactName: ${name}-${version}.${ext}
 linux:
   target:
-    - AppImage
-    - snap
-    - deb
+    - target: AppImage
+      arch:
+        - x64
+        - arm64
+        - armv7l
+    - target: deb
+      arch:
+        - x64
+        - arm64
+        - armv7l
   maintainer: electronjs.org
   category: Utility
 appImage:

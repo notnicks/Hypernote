@@ -42,13 +42,6 @@ export default function SyncModal({ isOpen, onClose, theme }) {
     }
     try {
       const url = await window.api.syncAuthUrl({ clientId, clientSecret })
-      await window.electron.ipcRenderer.send('open-external', url)
-      // OR use window.open if context bridge allows, but generic way:
-      // The main process usually blocks new windows.
-      // Let's assume user copies it or we open it via shell in main if we added a handler?
-      // Wait, main.js has:
-      // mainWindow.webContents.setWindowOpenHandler((details) => { shell.openExternal(details.url); return { action: 'deny' } })
-      // So window.open(url) should work and open in browser.
       window.open(url, '_blank')
 
       setNeedsAuth(true)

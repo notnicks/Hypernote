@@ -8,7 +8,37 @@ import chokidar from 'chokidar'
 import matter from 'gray-matter'
 import syncManager from './sync'
 
-const getNotesDir = () => {
+const CONFIG_FILE = 'app-config.json'
+
+function loadConfig(userDataPath) {
+  try {
+    const configPath = join(userDataPath, CONFIG_FILE)
+    if (fsSync.existsSync(configPath)) {
+      const data = fsSync.readFileSync(configPath, 'utf-8')
+      return JSON.parse(data)
+    }
+  } catch (e) {
+    console.error('Failed to load config', e)
+  }
+  return {}
+}
+
+function saveConfig(userDataPath, newConfig) {
+  try {
+    const configPath = join(userDataPath, CONFIG_FILE)
+    const current = loadConfig(userDataPath)
+    const updated = { ...current, ...newConfig }
+    fsSync.writeFileSync(configPath, JSON.stringify(updated, null, 2), 'utf-8')
+  } catch (e) {
+    console.error('Failed to save config', e)
+  }
+}
+
+const getNotesDir = (userDataPath = app.getPath('userData')) => {
+  const config = loadConfig(userDataPath)
+  if (config.notesDir && fsSync.existsSync(config.notesDir)) {
+    return config.notesDir
+  }
   return join(app.getPath('documents'), 'Hypernote')
 }
 
@@ -104,31 +134,49 @@ function createWindow() {
   })
 
   // Watcher
-  const notesDir = getNotesDir()
-  if (!fsSync.existsSync(notesDir)) {
-    fsSync.mkdirSync(notesDir, { recursive: true })
+  let watcher = null
+
+  const setupWatcher = () => {
+    if (watcher) {
+      watcher.close()
+    }
+
+    const notesDir = getNotesDir()
+    if (!fsSync.existsSync(notesDir)) {
+      fsSync.mkdirSync(notesDir, { recursive: true })
+    }
+
+    watcher = chokidar.watch(notesDir, {
+      ignored: /(^|[/\\])\../, // ignore dotfiles
+      persistent: true,
+      ignoreInitial: true
+    })
+
+    watcher.on('all', (event, path) => {
+      try {
+        if (!mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('note-update', { event, path })
+        }
+      } catch {
+        // Ignore errors if window is destroyed/closed
+      }
+    })
   }
 
-  const watcher = chokidar.watch(notesDir, {
-    ignored: /(^|[/\\])\../, // ignore dotfiles
-    persistent: true,
-    ignoreInitial: true
-  })
-
-  watcher.on('all', (event, path) => {
-    try {
-      if (!mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('note-update', { event, path })
-      }
-    } catch {
-      // Ignore errors if window is destroyed/closed
-    }
-  })
+  setupWatcher()
 
   // Clean up watcher when window is closed (e.g. reload or quit)
   mainWindow.on('closed', () => {
-    watcher.close()
+    if (watcher) watcher.close()
   })
+
+  // Listen for config changes to restart watcher
+  // We can use a custom event or just expose a function/variable to main process
+  // For now, let's keep it simple. If we change dir via IPC, we might need to trigger this.
+  // Actually, we can move `setupWatcher` to outside `createWindow` scope if we pass mainWindow?
+  // Or just recreate the window? No, that's heavy.
+  // Let's attach `setupWatcher` to `mainWindow` or store it globally for this window.
+  mainWindow.setupWatcher = setupWatcher
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
@@ -148,17 +196,55 @@ app.whenReady().then(() => {
   syncManager.loadConfig(app.getPath('userData')).catch(console.error)
 
   // IPC Handlers
-  const notesDir = getNotesDir()
+  // IPC Handlers
+  
+  ipcMain.handle('get-notes-dir', () => {
+    return getNotesDir()
+  })
+
+  ipcMain.handle('select-notes-dir', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+      properties: ['openDirectory', 'createDirectory', 'promptToCreate'],
+      title: 'Select Notes Directory'
+    })
+
+    if (canceled || filePaths.length === 0) {
+      return null
+    }
+
+    const newDir = filePaths[0]
+    saveConfig(app.getPath('userData'), { notesDir: newDir })
+
+    // Restart watcher
+    if (win && win.setupWatcher) {
+      win.setupWatcher()
+    }
+    
+    // Also reload window to refresh everything? 
+    // Or just let UI reload notes.
+    // UI usually calls `get-notes` on mount.
+    // We should probably tell UI to refresh.
+    // Reloading window is safest to ensure all paths are correct.
+    win.reload()
+
+    return newDir
+  })
+
+  // NOTE: getNotesDir() is dynamic, so we call it inside handlers
+
 
   ipcMain.handle('get-notes', async () => {
-    if (!fsSync.existsSync(notesDir)) {
-      await fs.mkdir(notesDir, { recursive: true })
+    const currentNotesDir = getNotesDir()
+    if (!fsSync.existsSync(currentNotesDir)) {
+      await fs.mkdir(currentNotesDir, { recursive: true })
     }
-    return getNotes(notesDir)
+    return getNotes(currentNotesDir)
   })
 
   ipcMain.handle('read-note', async (_, relPath) => {
-    const fullPath = join(notesDir, relPath)
+    const currentNotesDir = getNotesDir()
+    const fullPath = join(currentNotesDir, relPath)
     const content = await fs.readFile(fullPath, 'utf-8')
     const parsed = matter(content)
     return {
@@ -169,7 +255,8 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('write-note', async (_, { relPath, content, data }) => {
-    const fullPath = join(notesDir, relPath)
+    const currentNotesDir = getNotesDir()
+    const fullPath = join(currentNotesDir, relPath)
 
     // Auto-update dateEdited while preserving other data
     const updatedData = {
@@ -188,7 +275,8 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('create-note', async (_, { relPath, content = '', data = {} }) => {
-    const fullPath = join(notesDir, relPath)
+    const currentNotesDir = getNotesDir()
+    const fullPath = join(currentNotesDir, relPath)
     // Ensure dir exists
     const dirname = join(fullPath, '..')
     await fs.mkdir(dirname, { recursive: true })
@@ -208,13 +296,15 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('create-folder', async (_, relPath) => {
-    const fullPath = join(notesDir, relPath)
+    const currentNotesDir = getNotesDir()
+    const fullPath = join(currentNotesDir, relPath)
     await fs.mkdir(fullPath, { recursive: true })
     return true
   })
 
   ipcMain.handle('delete-note', async (_, relPath) => {
-    const fullPath = join(notesDir, relPath)
+    const currentNotesDir = getNotesDir()
+    const fullPath = join(currentNotesDir, relPath)
     const stats = await fs.stat(fullPath)
 
     if (stats.isDirectory()) {
@@ -230,8 +320,9 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('rename-note', async (_, oldRelPath, newRelPath) => {
-    const oldPath = join(notesDir, oldRelPath)
-    const newPath = join(notesDir, newRelPath)
+    const currentNotesDir = getNotesDir()
+    const oldPath = join(currentNotesDir, oldRelPath)
+    const newPath = join(currentNotesDir, newRelPath)
     await fs.rename(oldPath, newPath)
     return true
   })
@@ -260,7 +351,8 @@ app.whenReady().then(() => {
     const filename = sourcePath.split('/').pop() || 'imported.txt'
     const ext = filename.split('.').pop()
 
-    const importsDir = join(notesDir, 'imports')
+    const currentNotesDir = getNotesDir()
+    const importsDir = join(currentNotesDir, 'imports')
     if (!fsSync.existsSync(importsDir)) {
       await fs.mkdir(importsDir, { recursive: true })
     }
@@ -295,20 +387,17 @@ app.whenReady().then(() => {
 
   ipcMain.handle('sync-get-config', async () => {
     const config = await syncManager.loadConfig(app.getPath('userData'))
-    // Don't expose tokens or secrets unnecessarily if not needed,
-    // but the renderer needs client ID/Secret to generate auth url if we keep it stateless?
-    // Actually syncManager stores them.
-    // Let's return what we have so UI can populate fields.
     return {
-      clientId: config.clientId,
-      clientSecret: config.clientSecret,
-      hasTokens: !!config.tokens
+      clientId: config?.clientId,
+      clientSecret: config?.clientSecret,
+      hasTokens: !!config?.tokens
     }
   })
 
   ipcMain.handle('sync-start', async () => {
     try {
-      const changes = await syncManager.sync(notesDir)
+      const currentNotesDir = getNotesDir()
+      const changes = await syncManager.sync(currentNotesDir)
       return { success: true, changes }
     } catch (e) {
       console.error('Sync failed', e)

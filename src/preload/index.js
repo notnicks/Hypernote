@@ -17,6 +17,8 @@ const api = {
     ipcRenderer.on('note-update', subscription)
     return () => ipcRenderer.removeListener('note-update', subscription)
   },
+  getNotesDir: () => ipcRenderer.invoke('get-notes-dir'),
+  selectNotesDir: () => ipcRenderer.invoke('select-notes-dir'),
   // Sync
   syncAuthUrl: (creds) => ipcRenderer.invoke('sync-auth-url', creds),
   syncStartAutoAuth: (creds) => ipcRenderer.invoke('sync-start-auto-auth', creds),

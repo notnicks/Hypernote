@@ -1,0 +1,5 @@
+{
+  "appId": "com.hypernote.app",
+  "appName": "Hypernote",
+  "webDir": "out/renderer"
+}

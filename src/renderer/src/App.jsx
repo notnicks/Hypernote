@@ -3,10 +3,10 @@ import Sidebar from './components/Sidebar'
 import Editor from './components/Editor'
 import GraphView from './components/GraphView'
 import HelpModal from './components/HelpModal'
-import SyncModal from './components/SyncModal'
 import Settings from './components/Settings'
+import About from './components/About'
 import TabBar from './components/TabBar'
-import { Network, Edit3, Sun, Moon, HelpCircle, UploadCloud, Download } from 'lucide-react'
+import { Network, Edit3, Sun, Moon, HelpCircle, Download, Settings as SettingsIcon, Info } from 'lucide-react'
 
 function App() {
   const [notes, setNotes] = useState([])
@@ -21,7 +21,6 @@ function App() {
 
   const [filterTags, setFilterTags] = useState([])
   const [isHelpOpen, setIsHelpOpen] = useState(false)
-  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false)
   const [theme, setTheme] = useState(() => {
     if (typeof window !== 'undefined' && window.localStorage) {
       return window.localStorage.getItem('theme') || 'light'
@@ -422,14 +421,24 @@ function App() {
             <Download size={18} />
           </button>
           <button
-            onClick={() => setIsSyncModalOpen(true)}
+            onClick={() => setView('settings')}
             className={`p-1.5 rounded bg-transparent transition-colors mr-2 ${theme === 'dark'
               ? 'text-slate-400 hover:bg-slate-700'
               : 'text-slate-500 hover:bg-slate-100'
               }`}
-            title="Sync Settings"
+            title="Settings"
           >
-            <UploadCloud size={18} />
+            <SettingsIcon size={18} />
+          </button>
+          <button
+            onClick={() => setView('about')}
+            className={`p-1.5 rounded bg-transparent transition-colors mr-2 ${theme === 'dark'
+              ? 'text-slate-400 hover:bg-slate-700'
+              : 'text-slate-500 hover:bg-slate-100'
+              }`}
+            title="About Hypernote"
+          >
+            <Info size={18} />
           </button>
           <button
             onClick={() => setIsHelpOpen(true)}
@@ -492,7 +501,7 @@ function App() {
         )}
 
         <div className="flex-1 overflow-hidden relative">
-          {view === 'editor' ? (
+          {view === 'editor' && (
             <Editor
               theme={theme}
               activeNote={activeNote}
@@ -502,7 +511,9 @@ function App() {
               draftState={activeTabPath ? unsavedEdits[activeTabPath] : null}
               onNoteChange={handleNoteChange}
             />
-          ) : (
+          )}
+
+          {view === 'graph' && (
             <GraphView
               theme={theme}
               notes={notes}
@@ -520,10 +531,10 @@ function App() {
           )}
 
           {view === 'settings' && <Settings theme={theme} onClose={() => setView('editor')} />}
+          {view === 'about' && <About theme={theme} onClose={() => setView('editor')} />}
         </div>
       </div>
       <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} theme={theme} />
-      <SyncModal isOpen={isSyncModalOpen} onClose={() => setIsSyncModalOpen(false)} theme={theme} />
     </div>
   )
 }
