@@ -1,5 +1,13 @@
 {
   "appId": "com.hypernote.app",
-  "appName": "Hypernote",
-  "webDir": "out/renderer"
+  "appName": "hypernote",
+  "bundledWebRuntime": false,
+  "npmClient": "npm",
+  "webDir": "out/renderer",
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 0
+    }
+  },
+  "cordova": {}
 }

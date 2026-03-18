@@ -8,7 +8,7 @@ import { capacitorApi } from './api/capacitor-api'
 // Inject Capacitor API if not in Electron
 if (!window.electron) {
   window.api = capacitorApi
-  window.electron = { ipcRenderer: { invoke: () => { } } } // Mock to prevent crashes
+  window.electron = { ipcRenderer: { invoke: () => {} } } // Mock to prevent crashes
 }
 
 createRoot(document.getElementById('root')).render(

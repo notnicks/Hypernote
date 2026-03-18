@@ -4,16 +4,25 @@ import { Dialog } from '@capacitor/dialog'
 const ROOT_DIR = Directory.Documents
 const BASE_PATH = 'Hypernote'
 
-const getConnectPath = (path) => path ? `${BASE_PATH}/${path}` : BASE_PATH
+const getConnectPath = (path) => (path ? `${BASE_PATH}/${path}` : BASE_PATH)
 
 // Helper to ensure base directory exists
 const ensureBaseDir = async () => {
+  try {
+    const permStatus = await Filesystem.checkPermissions()
+    if (permStatus.publicStorage !== 'granted') {
+      await Filesystem.requestPermissions()
+    }
+  } catch (e) {
+    console.warn('Permission check not supported or failed', e)
+  }
+
   try {
     await Filesystem.readdir({
       path: BASE_PATH,
       directory: ROOT_DIR
     })
-  } catch (e) {
+  } catch {
     await Filesystem.mkdir({
       path: BASE_PATH,
       directory: ROOT_DIR,
@@ -30,14 +39,14 @@ const readDirRecursive = async (path = '') => {
       path: fullPath,
       directory: ROOT_DIR
     })
-    
+
     let items = []
-    
+
     for (const file of res.files) {
       if (file.name.startsWith('.')) continue
-      
+
       const itemPath = path ? `${path}/${file.name}` : file.name
-      
+
       if (file.type === 'directory') {
         const children = await readDirRecursive(itemPath)
         items = [...items, ...children]
@@ -49,7 +58,7 @@ const readDirRecursive = async (path = '') => {
         })
       }
     }
-    
+
     return items
   } catch (e) {
     console.error('Error reading dir', e)
@@ -62,13 +71,13 @@ export const capacitorApi = {
     await ensureBaseDir()
     const files = await readDirRecursive()
     // Map to expected format
-    return files.map(f => ({
+    return files.map((f) => ({
       ...f,
       content: '', // Load on demand or pre-load? Electron loads on demand usually
       title: f.name.replace('.md', '')
     }))
   },
-  
+
   readNote: async (path) => {
     try {
       const res = await Filesystem.readFile({
@@ -82,7 +91,7 @@ export const capacitorApi = {
       return ''
     }
   },
-  
+
   writeNote: async (path, content) => {
     try {
       await Filesystem.writeFile({
@@ -98,12 +107,12 @@ export const capacitorApi = {
       return false
     }
   },
-  
+
   createNote: async (path, content) => {
     // path includes filename
     return capacitorApi.writeNote(path, content)
   },
-  
+
   createFolder: async (path) => {
     try {
       await Filesystem.mkdir({
@@ -117,7 +126,7 @@ export const capacitorApi = {
       return false
     }
   },
-  
+
   deleteNote: async (path) => {
     try {
       await Filesystem.deleteFile({
@@ -130,7 +139,7 @@ export const capacitorApi = {
       return false
     }
   },
-  
+
   renameNote: async (oldPath, newPath) => {
     try {
       await Filesystem.rename({
@@ -144,25 +153,52 @@ export const capacitorApi = {
       return false
     }
   },
-  
-  onNoteUpdate: (callback) => {
+
+  onNoteUpdate: () => {
     // Capacitor doesn't have file watchers easily.
     // We might need to rely on manual refresh or events within the app.
     return () => {}
   },
-  
+
   // Stubs for sync (can implement later if needed)
   syncAuthUrl: async () => '',
   syncStartAutoAuth: async () => '',
   syncExchangeCode: async () => '',
   syncGetConfig: async () => ({}),
   syncStart: async () => {},
-  
+
   importNote: async () => {
-    // Mobile file picker?
-    console.warn('Import not implemented for mobile yet')
+    await Dialog.alert({
+      title: 'Not Supported',
+      message: 'File importing is not yet supported natively on Android.'
+    })
   },
-  
+
+  // Workspace Stubs
+  getWorkspaces: async () => {
+    return {
+      workspaces: [{ name: 'Hypernote (Mobile)', path: BASE_PATH }],
+      activeWorkspacePath: BASE_PATH
+    }
+  },
+
+  addWorkspace: async () => {
+    await Dialog.alert({
+      title: 'Libraries Not Supported',
+      message:
+        'Mobile devices are limited to the primary Documents library. Creating external folder workspaces is not supported on Android.'
+    })
+    return null
+  },
+
+  switchWorkspace: async () => {
+    return true
+  },
+
+  removeWorkspace: async () => {
+    return true
+  },
+
   showConfirmDialog: async ({ message, detail, buttons }) => {
     const { value } = await Dialog.confirm({
       title: 'Confirm',

@@ -39,12 +39,13 @@ export default function Settings({ theme }) {
         <div className="w-48 shrink-0 flex flex-col gap-1">
           <button
             onClick={() => setActiveTab('general')}
-            className={`text - left px - 4 py - 2 rounded font - medium ${activeTab === 'general'
-              ? theme === 'dark'
-                ? 'bg-slate-800 text-blue-400'
-                : 'bg-slate-200 text-blue-600'
-              : 'opacity-70 hover:opacity-100'
-              } `}
+            className={`text - left px - 4 py - 2 rounded font - medium ${
+              activeTab === 'general'
+                ? theme === 'dark'
+                  ? 'bg-slate-800 text-blue-400'
+                  : 'bg-slate-200 text-blue-600'
+                : 'opacity-70 hover:opacity-100'
+            } `}
           >
             General
           </button>
@@ -71,17 +72,18 @@ export default function Settings({ theme }) {
               <div
                 className={`p - 6 rounded - lg border ${theme === 'dark' ? 'bg-slate-800/50 border-slate-700' : 'bg-white border-slate-200 shadow-sm'} `}
               >
-                <h2 className="text-lg font-semibold mb-4 text-blue-500">
-                  Storage Location
-                </h2>
+                <h2 className="text-lg font-semibold mb-4 text-blue-500">Storage Location</h2>
 
                 <p className="mb-4 opacity-80 text-sm">
-                  Select a local folder to store your notes. You can point this to a folder synced by Google Drive, Dropbox, or iCloud to sync across devices.
+                  Select a local folder to store your notes. You can point this to a folder synced
+                  by Google Drive, Dropbox, or iCloud to sync across devices.
                 </p>
 
                 <div className="flex flex-col gap-2">
                   <label className="text-xs font-bold uppercase opacity-50">Current Folder</label>
-                  <div className={`p - 3 rounded border font - mono text - sm break-all ${theme === 'dark' ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-200'} `}>
+                  <div
+                    className={`p - 3 rounded border font - mono text - sm break-all ${theme === 'dark' ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-200'} `}
+                  >
                     {notesDir || 'Loading...'}
                   </div>
                 </div>

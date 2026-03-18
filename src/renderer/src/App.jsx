@@ -6,9 +6,20 @@ import HelpModal from './components/HelpModal'
 import Settings from './components/Settings'
 import About from './components/About'
 import TabBar from './components/TabBar'
-import { Network, Edit3, Sun, Moon, HelpCircle, Download, Settings as SettingsIcon, Info } from 'lucide-react'
+import {
+  Network,
+  Edit3,
+  Sun,
+  Moon,
+  HelpCircle,
+  Download,
+  Settings as SettingsIcon,
+  Info
+} from 'lucide-react'
 
 function App() {
+  const [workspaces, setWorkspaces] = useState([])
+  const [activeWorkspace, setActiveWorkspace] = useState(null)
   const [notes, setNotes] = useState([])
   const [view, setView] = useState('editor') // 'editor' | 'graph'
 
@@ -31,12 +42,12 @@ function App() {
   // Derived state for active note
   const activeNote = activeTabPath
     ? notes.find((n) => n.path === activeTabPath) ||
-    findNoteByTitle(notes, openTabs.find((t) => t.path === activeTabPath)?.title) ||
-    // Fallback: create skeleton if not loaded yet
-    (() => {
-      const tab = openTabs.find((t) => t.path === activeTabPath)
-      return tab ? { path: tab.path, title: tab.title, content: '', type: 'file' } : null
-    })()
+      findNoteByTitle(notes, openTabs.find((t) => t.path === activeTabPath)?.title) ||
+      // Fallback: create skeleton if not loaded yet
+      (() => {
+        const tab = openTabs.find((t) => t.path === activeTabPath)
+        return tab ? { path: tab.path, title: tab.title, content: '', type: 'file' } : null
+      })()
     : null
 
   useEffect(() => {
@@ -55,19 +66,32 @@ function App() {
     setTheme((prev) => (prev === 'light' ? 'dark' : 'light'))
   }
 
-  const loadNotes = async () => {
+  const loadState = async () => {
     try {
+      if (window.api.getWorkspaces) {
+        const wsData = await window.api.getWorkspaces()
+
+        // Check if the workspace actually changed
+        if (activeWorkspace && activeWorkspace !== wsData.activeWorkspacePath) {
+          setOpenTabs([])
+          setActiveTabPath(null)
+          setUnsavedEdits({})
+        }
+
+        setWorkspaces(wsData.workspaces)
+        setActiveWorkspace(wsData.activeWorkspacePath)
+      }
       const data = await window.api.getNotes()
       setNotes(data)
     } catch (e) {
-      console.error('Failed to load notes', e)
+      console.error('Failed to load state', e)
     }
   }
 
   useEffect(() => {
-    loadNotes()
+    loadState()
     const unsubscribe = window.api.onNoteUpdate(() => {
-      loadNotes()
+      loadState()
     })
     return unsubscribe
   }, [])
@@ -170,9 +194,9 @@ function App() {
     // Let's just implement a direct close for simplicity and reliability here
     // But since handleCloseTab manages active tab switching logic, better to reuse.
 
-    // Trick: If we know for sure we want to discard, we can just delete from state 
+    // Trick: If we know for sure we want to discard, we can just delete from state
     // AND then call close. But race condition might occur if handleCloseTab reads old state.
-    // Actually, state updates are batched. 
+    // Actually, state updates are batched.
     // Let's modify handleCloseTab to accept an optional 'force' param?
     // Or just call window.api.readNote to "revert" if we weren't closing?
     // The user said "exit without saving". So close tab.
@@ -297,7 +321,7 @@ function App() {
         return
       }
       await window.api.createFolder(folderName)
-      await loadNotes()
+      await loadState()
     } catch (e) {
       console.error('Failed to create folder', e)
       alert('Failed to create folder: ' + e.message)
@@ -343,7 +367,7 @@ function App() {
     try {
       const importedPath = await window.api.importNote()
       if (importedPath) {
-        await loadNotes()
+        await loadState()
         // Optionally find the new note and open it
         // We know the path is imports/filename.md usually, but let's find the exact node
         const note =
@@ -377,7 +401,7 @@ function App() {
       if (confirm(`Note "${targetTitle}" not found. Create it?`)) {
         const name = targetTitle.trim() + '.md'
         await window.api.createNote(name, `# ${targetTitle}\n\n`, { title: targetTitle })
-        await loadNotes()
+        await loadState()
         // Try to open it after a delay
         setTimeout(() => {
           // We can trigger a reload and then try to find it?
@@ -392,6 +416,8 @@ function App() {
       <Sidebar
         theme={theme}
         notes={notes}
+        workspaces={workspaces}
+        activeWorkspace={activeWorkspace}
         activeNote={activeTabPath}
         onSelect={handleOpenNote}
         onCreateNote={handleCreateNote}
@@ -407,83 +433,91 @@ function App() {
         className={`flex-1 flex flex-col h-full min-w-0 ${theme === 'dark' ? 'bg-slate-900' : 'bg-slate-50'}`}
       >
         <div
-          className={`h-12 border-b flex justify-end items-center px-4 gap-2 shrink-0 ${theme === 'dark' ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-white'
-            }`}
+          className={`h-12 border-b flex justify-end items-center px-4 gap-2 shrink-0 ${
+            theme === 'dark' ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-white'
+          }`}
         >
           <button
             onClick={handleImportNote}
-            className={`p-1.5 rounded bg-transparent transition-colors mr-2 ${theme === 'dark'
-              ? 'text-slate-400 hover:bg-slate-700'
-              : 'text-slate-500 hover:bg-slate-100'
-              }`}
+            className={`p-1.5 rounded bg-transparent transition-colors mr-2 ${
+              theme === 'dark'
+                ? 'text-slate-400 hover:bg-slate-700'
+                : 'text-slate-500 hover:bg-slate-100'
+            }`}
             title="Import Note"
           >
             <Download size={18} />
           </button>
           <button
             onClick={() => setView('settings')}
-            className={`p-1.5 rounded bg-transparent transition-colors mr-2 ${theme === 'dark'
-              ? 'text-slate-400 hover:bg-slate-700'
-              : 'text-slate-500 hover:bg-slate-100'
-              }`}
+            className={`p-1.5 rounded bg-transparent transition-colors mr-2 ${
+              theme === 'dark'
+                ? 'text-slate-400 hover:bg-slate-700'
+                : 'text-slate-500 hover:bg-slate-100'
+            }`}
             title="Settings"
           >
             <SettingsIcon size={18} />
           </button>
           <button
             onClick={() => setView('about')}
-            className={`p-1.5 rounded bg-transparent transition-colors mr-2 ${theme === 'dark'
-              ? 'text-slate-400 hover:bg-slate-700'
-              : 'text-slate-500 hover:bg-slate-100'
-              }`}
+            className={`p-1.5 rounded bg-transparent transition-colors mr-2 ${
+              theme === 'dark'
+                ? 'text-slate-400 hover:bg-slate-700'
+                : 'text-slate-500 hover:bg-slate-100'
+            }`}
             title="About Hypernote"
           >
             <Info size={18} />
           </button>
           <button
             onClick={() => setIsHelpOpen(true)}
-            className={`p-1.5 rounded bg-transparent transition-colors mr-2 ${theme === 'dark'
-              ? 'text-slate-400 hover:bg-slate-700'
-              : 'text-slate-500 hover:bg-slate-100'
-              }`}
+            className={`p-1.5 rounded bg-transparent transition-colors mr-2 ${
+              theme === 'dark'
+                ? 'text-slate-400 hover:bg-slate-700'
+                : 'text-slate-500 hover:bg-slate-100'
+            }`}
             title="Markdown Help"
           >
             <HelpCircle size={18} />
           </button>
           <button
             onClick={toggleTheme}
-            className={`p-1.5 rounded bg-transparent transition-colors mr-2 ${theme === 'dark'
-              ? 'text-slate-400 hover:bg-slate-700'
-              : 'text-slate-500 hover:bg-slate-100'
-              }`}
+            className={`p-1.5 rounded bg-transparent transition-colors mr-2 ${
+              theme === 'dark'
+                ? 'text-slate-400 hover:bg-slate-700'
+                : 'text-slate-500 hover:bg-slate-100'
+            }`}
             title={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
           >
             {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
           </button>
           <button
             onClick={() => setView('editor')}
-            className={`p-1.5 rounded transition-colors ${view === 'editor'
-              ? theme === 'dark'
-                ? 'bg-slate-700 text-slate-200'
-                : 'bg-slate-200 text-slate-800'
-              : theme === 'dark'
-                ? 'bg-transparent text-slate-400 hover:bg-slate-700'
-                : 'bg-transparent text-slate-500 hover:bg-slate-100'
-              }`}
+            className={`p-1.5 rounded transition-colors ${
+              view === 'editor'
+                ? theme === 'dark'
+                  ? 'bg-slate-700 text-slate-200'
+                  : 'bg-slate-200 text-slate-800'
+                : theme === 'dark'
+                  ? 'bg-transparent text-slate-400 hover:bg-slate-700'
+                  : 'bg-transparent text-slate-500 hover:bg-slate-100'
+            }`}
             title="Editor View"
           >
             <Edit3 size={18} />
           </button>
           <button
             onClick={() => setView('graph')}
-            className={`p-1.5 rounded transition-colors ${view === 'graph'
-              ? theme === 'dark'
-                ? 'bg-slate-700 text-slate-200'
-                : 'bg-slate-200 text-slate-800'
-              : theme === 'dark'
-                ? 'bg-transparent text-slate-400 hover:bg-slate-700'
-                : 'bg-transparent text-slate-500 hover:bg-slate-100'
-              }`}
+            className={`p-1.5 rounded transition-colors ${
+              view === 'graph'
+                ? theme === 'dark'
+                  ? 'bg-slate-700 text-slate-200'
+                  : 'bg-slate-200 text-slate-800'
+                : theme === 'dark'
+                  ? 'bg-transparent text-slate-400 hover:bg-slate-700'
+                  : 'bg-transparent text-slate-500 hover:bg-slate-100'
+            }`}
             title="Graph View"
           >
             <Network size={18} />

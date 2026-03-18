@@ -225,15 +225,15 @@ class DriveSyncManager {
 
     const dest = fsSync.createWriteStream(fullPath)
     await new Promise((resolve, reject) => {
-      this.drive.files.get(
-        { fileId, alt: 'media' },
-        { responseType: 'stream' }
-      ).then(res => {
-        res.data
-          .on('end', () => resolve())
-          .on('error', err => reject(err))
-          .pipe(dest)
-      }).catch(err => reject(err))
+      this.drive.files
+        .get({ fileId, alt: 'media' }, { responseType: 'stream' })
+        .then((res) => {
+          res.data
+            .on('end', () => resolve())
+            .on('error', (err) => reject(err))
+            .pipe(dest)
+        })
+        .catch((err) => reject(err))
     })
 
     // Set file mtime to match remote

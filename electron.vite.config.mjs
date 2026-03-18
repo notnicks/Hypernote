@@ -11,6 +11,9 @@ export default defineConfig({
         '@renderer': resolve('src/renderer/src')
       }
     },
+    define: {
+      'process.env.IS_PREACT': JSON.stringify('false')
+    },
     plugins: [react()]
   }
 })

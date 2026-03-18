@@ -184,10 +184,11 @@ export default function GraphView({ notes, onSelectNode, onSelectTag, theme }) {
         }}
       />
       <div
-        className={`absolute bottom-4 right-4 p-3 rounded-lg text-xs backdrop-blur border shadow-lg flex flex-col gap-2 ${theme === 'dark'
-          ? 'bg-slate-800/90 text-slate-300 border-slate-700'
-          : 'bg-white/90 text-slate-600 border-slate-200'
-          }`}
+        className={`absolute bottom-4 right-4 p-3 rounded-lg text-xs backdrop-blur border shadow-lg flex flex-col gap-2 ${
+          theme === 'dark'
+            ? 'bg-slate-800/90 text-slate-300 border-slate-700'
+            : 'bg-white/90 text-slate-600 border-slate-200'
+        }`}
       >
         <div className="font-bold mb-1 opacity-70">Legend</div>
 

@@ -1,11 +1,13 @@
-import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
-import { join, relative } from 'path'
+import { app, shell, BrowserWindow, ipcMain, dialog, protocol, net } from 'electron'
+import { join, relative, dirname } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { promises as fs } from 'fs'
 import fsSync from 'fs'
 import chokidar from 'chokidar'
 import matter from 'gray-matter'
+import AdmZip from 'adm-zip'
+import ogs from 'open-graph-scraper'
 import syncManager from './sync'
 
 const CONFIG_FILE = 'app-config.json'
@@ -36,10 +38,37 @@ function saveConfig(userDataPath, newConfig) {
 
 const getNotesDir = (userDataPath = app.getPath('userData')) => {
   const config = loadConfig(userDataPath)
+
+  if (config.activeWorkspacePath && fsSync.existsSync(config.activeWorkspacePath)) {
+    return config.activeWorkspacePath
+  }
+
+  // Fallback for legacy `notesDir` migration
   if (config.notesDir && fsSync.existsSync(config.notesDir)) {
     return config.notesDir
   }
+
   return join(app.getPath('documents'), 'Hypernote')
+}
+
+// Fetch list of normalized workspaces
+const getWorkspaces = (userDataPath = app.getPath('userData')) => {
+  const config = loadConfig(userDataPath)
+  let workspaces = config.workspaces || []
+
+  // Auto-migrate legacy `notesDir` into workspaces array if missing
+  const defaultDir = join(app.getPath('documents'), 'Hypernote')
+  const legacyDir = config.notesDir || defaultDir
+
+  if (workspaces.length === 0) {
+    workspaces = [{ name: 'Hypernote', path: legacyDir }]
+    saveConfig(userDataPath, { workspaces, activeWorkspacePath: legacyDir })
+  }
+
+  // Ensure active workspace is set
+  const activePath = config.activeWorkspacePath || legacyDir
+
+  return { workspaces, activeWorkspacePath: activePath }
 }
 
 async function getNotes(dir) {
@@ -196,17 +225,137 @@ app.whenReady().then(() => {
   syncManager.loadConfig(app.getPath('userData')).catch(console.error)
 
   // IPC Handlers
-  // IPC Handlers
-  
+
+  // Custom Protocol for serving attachments
+  protocol.handle('hypernote', (request) => {
+    const url = request.url.replace('hypernote://', '')
+    try {
+      const decodedUrl = decodeURIComponent(url)
+      const currentNotesDir = getNotesDir()
+      const filePath = join(currentNotesDir, decodedUrl)
+      return net.fetch(`file://${filePath}`)
+    } catch (e) {
+      console.error(e)
+      return new Response('Failed', { status: 404 })
+    }
+  })
+
+  ipcMain.handle('save-attachment', async (_, { currentNoteRelPath, fileBuffer }) => {
+    const currentNotesDir = getNotesDir()
+    const targetDir = dirname(join(currentNotesDir, currentNoteRelPath))
+
+    if (!fsSync.existsSync(targetDir)) {
+      await fs.mkdir(targetDir, { recursive: true })
+    }
+
+    // Generate random filename for the attachment to handle memory buffers easily
+    let ext = 'png'
+    if (fileBuffer.type === 'application/pdf') ext = 'pdf'
+    else if (fileBuffer.name && fileBuffer.name.toLowerCase().endsWith('.3mf')) ext = '3mf'
+    else if (fileBuffer.name && fileBuffer.name.toLowerCase().endsWith('.jpg')) ext = 'jpg'
+    else if (
+      fileBuffer.type === 'audio/mpeg' ||
+      (fileBuffer.name && fileBuffer.name.toLowerCase().endsWith('.mp3'))
+    )
+      ext = 'mp3'
+    else if (
+      fileBuffer.type === 'audio/wav' ||
+      (fileBuffer.name && fileBuffer.name.toLowerCase().endsWith('.wav'))
+    )
+      ext = 'wav'
+
+    let base = fileBuffer.name || `attachment-${Date.now()}`
+    if (base.toLowerCase().endsWith(`.${ext}`)) {
+      base = base.substring(0, base.length - (ext.length + 1))
+    }
+
+    let targetFilename = `${base}.${ext}`
+    let counter = 1
+    while (fsSync.existsSync(join(targetDir, targetFilename))) {
+      targetFilename = `${base}-${counter}.${ext}`
+      counter++
+    }
+
+    const targetPath = join(targetDir, targetFilename)
+
+    // fileBuffer.data is expected to be an ArrayBuffer sent via IPC in Electron 30+
+    // or Buffer
+    const buffer = Buffer.isBuffer(fileBuffer.data) ? fileBuffer.data : Buffer.from(fileBuffer.data)
+    await fs.writeFile(targetPath, buffer)
+
+    let thumbPath = undefined
+    if (ext === '3mf') {
+      try {
+        const zip = new AdmZip(buffer)
+        const entries = zip.getEntries()
+        // Look for any png or jpg, usually they are in Metadata/ or thumbnail/
+        // Avoid the 3D/ directory which might contain actual material textures
+        let thumbEntry = entries.find((e) => {
+          const name = e.entryName.toLowerCase()
+          return (name.endsWith('.png') || name.endsWith('.jpg')) && !name.includes('3d/')
+        })
+
+        if (!thumbEntry) {
+          console.log(
+            `No thumbnail found in 3mf ${base}. Contained files:`,
+            entries.map((e) => e.entryName)
+          )
+        }
+        if (thumbEntry) {
+          const thumbBuffer = thumbEntry.getData()
+          const thumbExt = thumbEntry.entryName.toLowerCase().endsWith('.jpg') ? 'jpg' : 'png'
+          const thumbFilename = `${targetFilename}-thumb.${thumbExt}`
+          const fullThumbPath = join(targetDir, thumbFilename)
+          await fs.writeFile(fullThumbPath, thumbBuffer)
+          thumbPath = relative(currentNotesDir, fullThumbPath)
+        }
+      } catch (err) {
+        console.error('Failed to extract 3mf thumbnail', err)
+      }
+    }
+
+    return { path: relative(currentNotesDir, targetPath), thumbPath }
+  })
+
+  ipcMain.handle('open-path', async (_, url) => {
+    try {
+      const decodedUrl = decodeURIComponent(url.replace('hypernote://', ''))
+      const currentNotesDir = getNotesDir()
+      const filePath = join(currentNotesDir, decodedUrl)
+      if (fsSync.existsSync(filePath)) {
+        await shell.showItemInFolder(filePath)
+      }
+      return true
+    } catch (e) {
+      console.error('Failed to open path', e)
+      return false
+    }
+  })
+
+  ipcMain.handle('fetch-og', async (_, url) => {
+    try {
+      const options = { url }
+      const { result } = await ogs(options)
+      return result
+    } catch (e) {
+      console.error('Failed to fetch open graph data for url', url, e)
+      return null
+    }
+  })
+
   ipcMain.handle('get-notes-dir', () => {
     return getNotesDir()
   })
 
-  ipcMain.handle('select-notes-dir', async (event) => {
+  ipcMain.handle('get-workspaces', () => {
+    return getWorkspaces()
+  })
+
+  ipcMain.handle('add-workspace', async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     const { canceled, filePaths } = await dialog.showOpenDialog(win, {
       properties: ['openDirectory', 'createDirectory', 'promptToCreate'],
-      title: 'Select Notes Directory'
+      title: 'Select Workspace Directory'
     })
 
     if (canceled || filePaths.length === 0) {
@@ -214,25 +363,65 @@ app.whenReady().then(() => {
     }
 
     const newDir = filePaths[0]
-    saveConfig(app.getPath('userData'), { notesDir: newDir })
+    const { workspaces } = getWorkspaces()
+
+    // Check if already exists
+    if (!workspaces.find((w) => w.path === newDir)) {
+      const name = newDir.split(/[/\\]/).pop() || 'New Workspace'
+      workspaces.push({ name, path: newDir })
+    }
+
+    saveConfig(app.getPath('userData'), { workspaces, activeWorkspacePath: newDir })
 
     // Restart watcher
     if (win && win.setupWatcher) {
       win.setupWatcher()
     }
-    
-    // Also reload window to refresh everything? 
-    // Or just let UI reload notes.
-    // UI usually calls `get-notes` on mount.
-    // We should probably tell UI to refresh.
-    // Reloading window is safest to ensure all paths are correct.
-    win.reload()
 
+    // Tell UI to reload Notes
+    win.reload()
     return newDir
   })
 
-  // NOTE: getNotesDir() is dynamic, so we call it inside handlers
+  ipcMain.handle('switch-workspace', async (event, path) => {
+    saveConfig(app.getPath('userData'), { activeWorkspacePath: path })
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (win && win.setupWatcher) {
+      win.setupWatcher()
+      win.reload()
+    }
+    return true
+  })
 
+  ipcMain.handle('remove-workspace', async (event, pathToRemove) => {
+    const { workspaces, activeWorkspacePath } = getWorkspaces()
+    const newWorkspaces = workspaces.filter((w) => w.path !== pathToRemove)
+
+    // If they delete all, give them a blank default back
+    if (newWorkspaces.length === 0) {
+      const defaultDir = join(app.getPath('documents'), 'Hypernote')
+      newWorkspaces.push({ name: 'Hypernote', path: defaultDir })
+    }
+
+    let nextActive = activeWorkspacePath
+    if (activeWorkspacePath === pathToRemove) {
+      nextActive = newWorkspaces[0].path
+    }
+
+    saveConfig(app.getPath('userData'), {
+      workspaces: newWorkspaces,
+      activeWorkspacePath: nextActive
+    })
+
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (activeWorkspacePath === pathToRemove && win && win.setupWatcher) {
+      win.setupWatcher()
+      win.reload() // Only reload if we actually switched active workspace
+    }
+    return { activeWorkspacePath: nextActive, workspaces: newWorkspaces }
+  })
+
+  // NOTE: getNotesDir() is dynamic, so we call it inside handlers
 
   ipcMain.handle('get-notes', async () => {
     const currentNotesDir = getNotesDir()

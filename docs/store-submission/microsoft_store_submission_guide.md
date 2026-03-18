@@ -11,9 +11,9 @@ To fill in the placeholders in `electron-builder.yml`, you need to register as a
 3.  Once registered, create a new app submission to reserve your app name.
 4.  Navigate to **Product management** > **Product Identity**.
 5.  Copy the following values:
-    *   **Package/Identity/Name**: Use this for `identityName` in `electron-builder.yml`.
-    *   **Package/Identity/Publisher**: Use this for `publisher` in `electron-builder.yml` (e.g., `CN=...`).
-    *   **Package/Properties/PublisherDisplayName**: Use this for `publisherDisplayName`.
+    - **Package/Identity/Name**: Use this for `identityName` in `electron-builder.yml`.
+    - **Package/Identity/Publisher**: Use this for `publisher` in `electron-builder.yml` (e.g., `CN=...`).
+    - **Package/Properties/PublisherDisplayName**: Use this for `publisherDisplayName`.
 
 ## 2. Finalize `electron-builder.yml`
 
@@ -21,9 +21,9 @@ Update [electron-builder.yml](file:///Users/nickshell/Hypernote/electron-builder
 
 ```yaml
 appx:
-  publisher: "CN=YOUR-DASHBOARD-PUBLISHER-ID"
-  publisherDisplayName: "Your Name/Company Name"
-  identityName: "YourAppIdentityName"
+  publisher: 'CN=YOUR-DASHBOARD-PUBLISHER-ID'
+  publisherDisplayName: 'Your Name/Company Name'
+  identityName: 'YourAppIdentityName'
 ```
 
 ## 3. Build the MSIX Package

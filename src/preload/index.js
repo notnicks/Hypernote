@@ -12,13 +12,20 @@ const api = {
   createFolder: (path) => ipcRenderer.invoke('create-folder', path),
   deleteNote: (path) => ipcRenderer.invoke('delete-note', path),
   renameNote: (oldPath, newPath) => ipcRenderer.invoke('rename-note', oldPath, newPath),
+  saveAttachment: (currentNoteRelPath, fileBuffer) =>
+    ipcRenderer.invoke('save-attachment', { currentNoteRelPath, fileBuffer }),
+  openPath: (url) => ipcRenderer.invoke('open-path', url),
+  fetchOg: (url) => ipcRenderer.invoke('fetch-og', url),
   onNoteUpdate: (callback) => {
     const subscription = (_event, value) => callback(value)
     ipcRenderer.on('note-update', subscription)
     return () => ipcRenderer.removeListener('note-update', subscription)
   },
   getNotesDir: () => ipcRenderer.invoke('get-notes-dir'),
-  selectNotesDir: () => ipcRenderer.invoke('select-notes-dir'),
+  getWorkspaces: () => ipcRenderer.invoke('get-workspaces'),
+  addWorkspace: () => ipcRenderer.invoke('add-workspace'),
+  switchWorkspace: (path) => ipcRenderer.invoke('switch-workspace', path),
+  removeWorkspace: (path) => ipcRenderer.invoke('remove-workspace', path),
   // Sync
   syncAuthUrl: (creds) => ipcRenderer.invoke('sync-auth-url', creds),
   syncStartAutoAuth: (creds) => ipcRenderer.invoke('sync-start-auto-auth', creds),

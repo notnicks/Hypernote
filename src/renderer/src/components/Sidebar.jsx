@@ -12,7 +12,10 @@ import {
   ArrowDownAZ,
   ArrowUpAZ,
   Calendar,
-  Clock
+  Clock,
+  Briefcase,
+  Check,
+  Plus
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -400,6 +403,8 @@ export default function Sidebar({
   onDeleteNote,
   onMoveNote,
   onRenameItem,
+  workspaces = [],
+  activeWorkspace = null,
   filterTags = [],
   onFilterChange,
   theme
@@ -409,6 +414,7 @@ export default function Sidebar({
   const [isCreatingFolder, setIsCreatingFolder] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
   const [renamingPath, setRenamingPath] = useState(null)
+  const [isWorkspaceDropdownOpen, setIsWorkspaceDropdownOpen] = useState(false)
 
   // Sort State
   const [sortOption, setSortOption] = useState('title') // title | dateCreated | dateEdited
@@ -425,6 +431,30 @@ export default function Sidebar({
       } else {
         setSortDirection('asc')
       }
+    }
+  }
+
+  const handleWorkspaceSwitch = async (path) => {
+    setIsWorkspaceDropdownOpen(false)
+    if (path !== activeWorkspace) {
+      // The reload happens on the backend and forces the UI to fully refresh
+      await window.api.switchWorkspace(path)
+    }
+  }
+
+  const handleAddWorkspace = async () => {
+    setIsWorkspaceDropdownOpen(false)
+    await window.api.addWorkspace()
+  }
+
+  const handleRemoveWorkspace = async (e, path) => {
+    e.stopPropagation()
+    if (
+      confirm(
+        'Are you sure you want to remove this workspace from the list? Your actual files will remain safe.'
+      )
+    ) {
+      await window.api.removeWorkspace(path)
     }
   }
 
@@ -543,8 +573,96 @@ export default function Sidebar({
       onDrop={handleRootDrop}
       onDragOver={handleRootDragOver}
     >
+      {/* Workspace Switcher */}
       <div
-        className={`px-4 pb-4 pt-12 border-b flex flex-col gap-3 ${theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}
+        className={`px-4 pt-12 pb-3 border-b relative ${theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}
+      >
+        <button
+          onClick={() => setIsWorkspaceDropdownOpen(!isWorkspaceDropdownOpen)}
+          className={`w-full flex items-center justify-between px-2 py-1.5 rounded-md transition-colors ${
+            theme === 'dark'
+              ? 'hover:bg-slate-700 text-slate-200'
+              : 'hover:bg-slate-100 text-slate-800'
+          }`}
+        >
+          <div className="flex items-center gap-2 overflow-hidden">
+            <Briefcase
+              size={14}
+              className={theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}
+            />
+            <span className="text-sm font-semibold truncate">
+              {workspaces.find((w) => w.path === activeWorkspace)?.name || 'Hypernote'}
+            </span>
+          </div>
+          <ChevronDown
+            size={14}
+            className={`opacity-50 transition-transform ${isWorkspaceDropdownOpen ? 'rotate-180' : ''}`}
+          />
+        </button>
+
+        {isWorkspaceDropdownOpen && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setIsWorkspaceDropdownOpen(false)} />
+            <div
+              className={`absolute top-full left-4 right-4 mt-1 z-50 rounded-md shadow-lg border overflow-hidden ${
+                theme === 'dark'
+                  ? 'bg-slate-800 border-slate-700 shadow-black/50'
+                  : 'bg-white border-slate-200'
+              }`}
+            >
+              <div className="max-h-60 overflow-y-auto py-1">
+                {workspaces.map((ws) => (
+                  <div
+                    key={ws.path}
+                    className={`group flex items-center justify-between px-3 py-2 cursor-pointer text-sm ${
+                      theme === 'dark'
+                        ? 'hover:bg-slate-700 text-slate-200'
+                        : 'hover:bg-slate-100 text-slate-700'
+                    }`}
+                    onClick={() => handleWorkspaceSwitch(ws.path)}
+                  >
+                    <div className="flex items-center gap-2 truncate">
+                      <div className="w-4">
+                        {ws.path === activeWorkspace && (
+                          <Check size={14} className="text-blue-500" />
+                        )}
+                      </div>
+                      <span className="truncate">{ws.name}</span>
+                    </div>
+                    {workspaces.length > 1 && (
+                      <button
+                        onClick={(e) => handleRemoveWorkspace(e, ws.path)}
+                        className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-slate-400/20 text-slate-400 hover:text-red-500 transition-all"
+                        title="Remove workspace"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div
+                className={`border-t px-1 py-1 ${theme === 'dark' ? 'border-slate-700' : 'border-slate-100'}`}
+              >
+                <button
+                  onClick={handleAddWorkspace}
+                  className={`w-full flex items-center gap-2 px-2 py-1.5 cursor-pointer text-sm rounded ${
+                    theme === 'dark'
+                      ? 'hover:bg-slate-700 text-blue-400'
+                      : 'hover:bg-slate-100 text-blue-600'
+                  }`}
+                >
+                  <Plus size={14} />
+                  <span>Add Workspace...</span>
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div
+        className={`px-4 pb-4 pt-4 border-b flex flex-col gap-3 ${theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}
       >
         <div className="flex justify-between items-center">
           <div

@@ -1,5 +1,6 @@
 import { X, Book, FileText, Folder, Hash, Network, Search, Command, Activity } from 'lucide-react'
 import { useState } from 'react'
+import pkg from '../../../../package.json'
 
 export default function HelpModal({ isOpen, onClose, theme }) {
   const [activeTab, setActiveTab] = useState('markdown')
@@ -174,62 +175,85 @@ export default function HelpModal({ isOpen, onClose, theme }) {
               <Activity size={18} className="text-blue-500" /> Advanced Blocks
             </h3>
             <p className="opacity-80 mb-2">
-              Hypernote supports various advanced block types using the <code>///type</code> syntax.
+              Hypernote supports various advanced block types using the <code>{'///type'}</code>{' '}
+              syntax.
             </p>
 
-            <div
-              className={`p-3 rounded border text-xs font-mono space-y-2 mb-4 ${theme === 'dark' ? 'bg-slate-900/50 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
-            >
-              <div className="text-blue-500 font-bold mb-1">Mermaid Diagrams</div>
-              <pre className="opacity-75">
-                {`///mermaid
-graph TD;
-  A-->B;
-///`}
-              </pre>
-
-              <div className="text-blue-500 font-bold mb-1 mt-4">Math (LaTeX)</div>
-              <pre className="opacity-75">
-                {`///math
-E = mc^2
-///`}
-              </pre>
-
-              <div className="text-blue-500 font-bold mb-1 mt-4">Admonitions</div>
-              <pre className="opacity-75">
-                {`///tip
-This is a helpful tip!
-///`}
-              </pre>
-              <div className="opacity-50 text-[10px] mt-1">
-                Supported: tip, warning, caution, note
-              </div>
-
-              <div className="text-blue-500 font-bold mb-1 mt-4">CSV Table</div>
-              <pre className="opacity-75">
-                {`///csv
-Name, Role
-Alice, Dev
-Bob, Design
-///`}
-              </pre>
-
-              <div className="text-blue-500 font-bold mb-1 mt-4">Kanban Board</div>
-              <pre className="opacity-75">
-                {`///kanban
-TODO:
-- Task 1
-DONE:
-- Task 2
-///`}
-              </pre>
-
-              <div className="text-blue-500 font-bold mb-1 mt-4">Video Embed</div>
-              <pre className="opacity-75">
-                {`///video
-https://www.youtube.com/watch?v=...
-///`}
-              </pre>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              {[
+                {
+                  name: 'Mermaid Diagrams',
+                  icon: '🧜‍♀️',
+                  code: `///mermaid\ngraph TD;\n  A-->B;\n///`
+                },
+                { name: 'Math (LaTeX)', icon: '∑', code: `///math\nE = mc^2\n///` },
+                {
+                  name: 'Interactive Tasks',
+                  icon: '☑️',
+                  code: `///tasks\n- [ ] Todo item\n- [x] Done item\n///`
+                },
+                {
+                  name: 'Excalidraw',
+                  icon: '✏️',
+                  code: `///draw\n// type ///draw and hit enter\n///`
+                },
+                {
+                  name: 'Charts (Recharts)',
+                  icon: '📊',
+                  code: `///chart\n{\n  "type": "bar",\n  "data": [\n    {"name": "Jan", "value": 10},\n    {"name": "Feb", "value": 20}\n  ]\n}\n///\n\n// x-axis is 'name'\n// y-axis is 'value'\n// Types: bar, line, pie`
+                },
+                {
+                  name: 'Database Grid',
+                  icon: '🗄️',
+                  code: `///database\n[{"id": 1, "task": "Hello"}]\n///`
+                },
+                {
+                  name: 'Map (Leaflet)',
+                  icon: '🗺️',
+                  code: `///map\n{"lat": 51.505, "lng": -0.09, "zoom": 13, "tooltip": "London"}\n///`
+                },
+                {
+                  name: 'Audio Embed',
+                  icon: '🎵',
+                  code: `///audio\n{"url": "file:///path.mp3", "name": "Song"}\n///`
+                },
+                {
+                  name: 'Web Bookmarks',
+                  icon: '🔖',
+                  code: `///bookmark\nhttps://www.google.com\n///`
+                },
+                { name: 'Calendar', icon: '📅', code: `///calendar\n///` },
+                {
+                  name: 'Admonitions',
+                  icon: '💡',
+                  code: `///tip\nThis is a helpful tip!\n///\n\n// Supported: tip, warning, caution, note`
+                },
+                { name: 'CSV Table', icon: '📝', code: `///csv\nName, Role\nAlice, Dev\n///` },
+                {
+                  name: 'Kanban Board',
+                  icon: '📋',
+                  code: `///kanban\nTODO:\n- Task 1\nDONE:\n///`
+                },
+                {
+                  name: 'Video Embed',
+                  icon: '🎬',
+                  code: `///video\nhttps://youtube.com/watch?v=...\n///`
+                }
+              ].map((block, i) => (
+                <div
+                  key={i}
+                  className={`p-3 rounded border flex flex-col overflow-hidden ${theme === 'dark' ? 'bg-slate-900/50 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
+                >
+                  <h3 className="font-semibold mb-2 text-sm text-blue-500 flex items-center gap-2">
+                    <span>{block.icon}</span> {block.name}
+                  </h3>
+                  <div className="bg-black/5 dark:bg-black/20 p-2 rounded max-h-32 overflow-y-auto w-full">
+                    <code className="text-[11px] font-mono whitespace-pre-wrap break-all opacity-80 block w-full">
+                      {block.code}
+                    </code>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -324,7 +348,7 @@ https://www.youtube.com/watch?v=...
         <div
           className={`p-3 border-t text-xs text-center shrink-0 ${theme === 'dark' ? 'border-slate-700 text-slate-500' : 'border-slate-100 text-slate-400'}`}
         >
-          Hypernote v1.0.0
+          Hypernote v{pkg.version}
         </div>
       </div>
     </div>

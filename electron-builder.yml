@@ -14,13 +14,12 @@ win:
   executableName: hypernote
   target:
     - nsis
-    - appx
 appx:
-  publisher: "CN=YOUR-PUBLISHER-ID-HERE"
-  publisherDisplayName: "Your Name or Company"
-  identityName: "com.electron.hypernote"
-  applicationId: "Hypernote"
-  displayName: "Hypernote"
+  publisher: 'CN=YOUR-PUBLISHER-ID-HERE'
+  publisherDisplayName: 'Your Name or Company'
+  identityName: 'com.electron.hypernote'
+  applicationId: 'Hypernote'
+  displayName: 'Hypernote'
   languages:
     - en-US
 nsis:
